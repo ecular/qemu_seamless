@@ -41,9 +41,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/sem.h>
-#include <sys/socket.h>
-//#include <linux/in.h>
-
 
 /* Needed early for CONFIG_BSD etc. */
 #include "config-host.h"
@@ -251,12 +248,10 @@ uint8_t qemu_extra_params_fw[2];
 
 /*edit by ecular*/
 pthread_t ntid;
-pthread_t stid;
 static ram_addr_t host_v;
 int err;
 int sem_id_close;
 int port_num;
-int vpa_offset = 0;
 struct thread_arg {
     int argc_real;
     char **argv;
@@ -2428,81 +2423,14 @@ int cal_num(char *str)
     return sum%8090+(65535-8090);
 }
 
-/*thread for receive socket*/
-void *socket_rec(void *arg) {
-
-    int sfp,nfp; 
-    struct sockaddr_in s_add,c_add;
-    int sin_size,len,i,rev_len;
-    char buf[16384];
-    int portnum=*((int *)arg); 
-
-    sfp = socket(AF_INET, SOCK_STREAM, 0);
-    if(-1 == sfp)
-    {
-        printf("socket fail ! \r\n");
-        return -1;
-    }
-
-    bzero(&s_add,sizeof(struct sockaddr_in));
-    s_add.sin_family=AF_INET;
-    s_add.sin_addr.s_addr=htonl(INADDR_ANY); 
-    s_add.sin_port=htons(portnum);
-
-    if(-1 == bind(sfp,(struct sockaddr *)(&s_add), sizeof(struct sockaddr)))
-    {
-        printf("bind fail !\r\n");
-        return -1;
-    }
-
-    if(-1 == listen(sfp,5))
-    {
-        printf("listen fail !\r\n");
-        return -1;
-    }
-    while(1)
-    {
-        sin_size = sizeof(struct sockaddr_in);
-        nfp = accept(sfp, (struct sockaddr *)(&c_add), &sin_size);
-        if(-1 == nfp)
-        {
-            printf("accept fail !\r\n");
-            return -1;
-        }
-       // /* 这里使用write向客户端发送信息，也可以尝试使用其他函数实现 */
-       // if(-1 == write(nfp,"hello,welcome to my server \r\n",32))
-       // {
-       //     printf("write fail!\r\n");
-       //     return -1;
-       // }
-       // printf("write ok!\r\n");
-
-        if((rev_len=recv(nfp,buf,16384,0)) ==-1)
-        {
-            perror("call to recv");
-            exit(1);
-        }
-
-        semaphore_p(sem_id);//P
-        printf("received from client:%s\n",buf);
-        *(int *)(host_v + vpa_offset + sizeof(char)+1024*1024*5)=rev_len;
-        memcpy((char *)(host_v + vpa_offset + sizeof(char)+1024*1024*5+sizeof(int)),buf,rev_len);
-        *(char *)(host_v + 20) = '1';
-        semaphore_v(sem_id);//V
-        close(nfp);
-    }
-    close(sfp);
-    return 0;
-
-}
 /*thread for date exchange*/
 static void *thr_fn(void *arg) {
-    int print_count = 0;
+    int shm_id, print_count = 0;
     char *p_map;/*shared memory with server*/
     key_t key;
+    int vpa_offset = 0;
     int argc_real = ((struct thread_arg *)arg)->argc_real;
     char **argv = ((struct thread_arg *)arg)->argv;
-    int portnum = cal_num(argv[argc_real - 1] + 2);
     /*caculate key*/
     key = ftok(argv[argc_real - 2] + 2, 0x03);
     if(key == -1) {
@@ -2510,7 +2438,7 @@ static void *thr_fn(void *arg) {
         return ((void *)0);
     }
     /*create the shared memory segment with this key*/
-    int shm_id = shmget(key, SHARE_MEM_SIZE, IPC_CREAT | 0600);
+    shm_id = shmget(key, SHARE_MEM_SIZE, IPC_CREAT | 0600);
     if(shm_id == -1) {
         perror("shmget error");
         return ((void *)0);
@@ -2542,8 +2470,6 @@ static void *thr_fn(void *arg) {
     vpa_offset = *(int *)(host_v + 2); //get shared memory VPA
     *(char *)(host_v + vpa_offset + sizeof(char)) = '0'; //tell client that qemu has received date completely
     printf("\nConnecting to shared memory.:%d\n", vpa_offset);
-
-    pthread_create(&stid, NULL, socket_rec, (void *)&portnum);
 
     for(; ;)
     {
@@ -2601,7 +2527,6 @@ static void *thr_fn(void *arg) {
             printf("have new notify from client\n");
             for(; ;)//waite server ready
             {
-                printf("new notify from client wait...\n");
                 if(*((char *)(p_map + 1024 * 1024 * 4 + sizeof(int))) == '0')
                     break;
             }
