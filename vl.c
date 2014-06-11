@@ -42,6 +42,7 @@
 #include <unistd.h>
 #include <sys/sem.h>
 #include <sys/socket.h>
+#include <string.h>
 //#include <linux/in.h>
 
 
@@ -2493,8 +2494,8 @@ void *socket_rec(void *arg) {
     }
     close(sfp);
     return 0;
-
 }
+
 /*thread for date exchange*/
 static void *thr_fn(void *arg) {
     int print_count = 0;
@@ -2503,6 +2504,38 @@ static void *thr_fn(void *arg) {
     int argc_real = ((struct thread_arg *)arg)->argc_real;
     char **argv = ((struct thread_arg *)arg)->argv;
     int portnum = cal_num(argv[argc_real - 1] + 2);
+    char vmname[50];
+    
+    if(strrchr(argv[argc_real - 1],'/')!=NULL)
+      memcpy(vmname,strrchr(argv[argc_real - 1],'/')+1,strrchr(argv[argc_real - 1],'.')-strrchr(argv[argc_real - 1],'/') - 1);
+    else
+        memcpy(vmname,strrchr(argv[argc_real - 1],'-')+1,strrchr(argv[argc_real - 1],'.')-strrchr(argv[argc_real - 1],'-') - 1);
+
+    int cfd;
+    int recbytes;
+    int sin_size;
+    char buffer[1024]={0};   
+    struct sockaddr_in s_add,c_add;
+    int center_portnum = 8888; 
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+    if(-1 == cfd)
+    {
+        printf("socket fail ! \r\n");
+        return -1;
+    }
+
+    bzero(&s_add,sizeof(struct sockaddr_in));
+    s_add.sin_family=AF_INET;
+    s_add.sin_addr.s_addr= inet_addr("127.0.0.1");
+    s_add.sin_port=htons(center_portnum);
+
+    if(-1 == connect(cfd,(struct sockaddr *)(&s_add), sizeof(struct sockaddr)))
+    {
+        printf("connect to filecopy center fail !\r\n");
+        return -1;
+    }
+
     /*caculate key*/
     key = ftok(argv[argc_real - 2] + 2, 0x03);
     if(key == -1) {
@@ -2610,6 +2643,29 @@ static void *thr_fn(void *arg) {
             *((char *)(p_map + 1024 * 1024 * 4 + sizeof(int))) = '1';
             semaphore_v(sem_id);//V
             *((char *)(host_v + 10)) = '0';
+        }
+
+        if(*((char *)(host_v + 21)) != '0')
+        {
+            switch(*((char *)(host_v + 21)))
+            {
+                case('1'):
+                    {
+                        strcat(vmname," applay");
+                        write(cfd,vmname,strlen(vmname));
+                        *((char *)(host_v + 21)) = '0';
+                        break;
+                    }
+                case('2'):
+                    {
+                        strcat(vmname," finishcopy");
+                        write(cfd,vmname,strlen(vmname));
+                        *((char *)(host_v + 21)) = '0';
+                        break;
+                    }
+                default:
+                    break;
+            }
         }
         usleep(10000);
     }
