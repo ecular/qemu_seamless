@@ -253,6 +253,8 @@ uint8_t qemu_extra_params_fw[2];
 /*edit by ecular*/
 pthread_t ntid;
 pthread_t stid;
+pthread_t jtid;
+pthread_t ctid;
 static ram_addr_t host_v;
 int err;
 int sem_id_close;
@@ -2419,6 +2421,58 @@ int qemu_init_main_loop(void)
     return main_loop_init();
 }
 
+/*thread for receive socket*/
+void *socket_rec_judge(void *arg) 
+{
+    int *nfp = (int *)arg;
+    char *buf[20]={0};
+    int rev_len;
+    while(1)
+    {
+        if((rev_len=recv(*nfp,buf,20,0)) <= 0)
+        {
+            perror("call to recv");
+            return;
+        }
+        else
+        {
+            if(strstr(buf,"OK"))
+                *((char *)(host_v + 21)) = '3';
+            else
+                if(strstr(buf,"NO"))
+                    *((char *)(host_v + 21)) = '4';
+                else
+                    if(strstr(buf,"TO"))
+                    {
+                        *(char *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 99) = '1';
+                    }
+            memset(buf,0,20);
+        }
+    }
+}
+
+/*thread for fileexchange receive socket*/
+void *file_notify_rec(void *arg) {
+
+    char buf[10] = {0};
+    int rev_len,socket_id=*((int *)arg); 
+
+    while(1)
+    {
+        if((rev_len=recv(socket_id,buf,10,0)) <= 0)
+        {
+            perror("call to recv");
+            exit(1);
+        }
+
+        if(buf[0] == 'T' && buf[1] == '0')
+        {
+            memset(buf,0,10);
+            *(char *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 99) = '1';
+        }
+    }
+}
+
 int cal_num(char *str)
 {
     int sum = 0;
@@ -2429,7 +2483,7 @@ int cal_num(char *str)
     return sum%8090+(65535-8090);
 }
 
-/*thread for receive socket*/
+/*thread for cmd receive socket*/
 void *socket_rec(void *arg) {
 
     int sfp,nfp; 
@@ -2470,13 +2524,6 @@ void *socket_rec(void *arg) {
             printf("accept fail !\r\n");
             return -1;
         }
-       // /* 这里使用write向客户端发送信息，也可以尝试使用其他函数实现 */
-       // if(-1 == write(nfp,"hello,welcome to my server \r\n",32))
-       // {
-       //     printf("write fail!\r\n");
-       //     return -1;
-       // }
-       // printf("write ok!\r\n");
 
         if((rev_len=recv(nfp,buf,16384,0)) ==-1)
         {
@@ -2535,6 +2582,10 @@ static void *thr_fn(void *arg) {
         printf("connect to filecopy center fail !\r\n");
         return -1;
     }
+    char connect_notify[20]={'*','#',' '};
+    strcat(connect_notify,vmname);
+    write(cfd,connect_notify,strlen(connect_notify));
+    pthread_create(&jtid, NULL, socket_rec_judge, (void *)(&cfd));
 
     /*caculate key*/
     key = ftok(argv[argc_real - 2] + 2, 0x03);
@@ -2645,22 +2696,31 @@ static void *thr_fn(void *arg) {
             *((char *)(host_v + 10)) = '0';
         }
 
-        if(*((char *)(host_v + 21)) != '0')
+        if(*((char *)(host_v + 21)) == '1' || *((char *)(host_v + 21)) == '2')
         {
             switch(*((char *)(host_v + 21)))
             {
                 case('1'):
                     {
-                        strcat(vmname," applay");
-                        write(cfd,vmname,strlen(vmname));
+                        char vmname1[50];
+                        memcpy(vmname1,vmname,50);
+                        int len = *(int *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 100);
+                        strcat(vmname1," applay ");
+                        memcpy(vmname1+strlen(vmname1),host_v + vpa_offset + sizeof(char)+1024*1024*5+2*sizeof(int)+100,len);
+                        write(cfd,vmname1,strlen(vmname1));
                         *((char *)(host_v + 21)) = '0';
                         break;
                     }
                 case('2'):
                     {
-                        strcat(vmname," finishcopy");
-                        write(cfd,vmname,strlen(vmname));
                         *((char *)(host_v + 21)) = '0';
+                        *(char *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 99) = '1';
+                        char vmname2[50];
+                        memcpy(vmname2,vmname,50);
+                        int len = *(int *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 100);
+                        strcat(vmname2," finishcopy ");
+                        memcpy(vmname2+strlen(vmname2),host_v + vpa_offset + sizeof(char)+1024*1024*5+2*sizeof(int)+100,len);
+                        write(cfd,vmname2,strlen(vmname2));
                         break;
                     }
                 default:
