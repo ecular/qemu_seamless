@@ -2437,10 +2437,10 @@ void *socket_rec_judge(void *arg)
         else
         {
             if(strstr(buf,"OK"))
-                *((char *)(host_v + 21)) = '3';
+                *((char *)(host_v + 22)) = '3';
             else
                 if(strstr(buf,"NO"))
-                    *((char *)(host_v + 21)) = '4';
+                    *((char *)(host_v + 22)) = '4';
                 else
                     if(strstr(buf,"TO"))
                     {
@@ -2452,7 +2452,7 @@ void *socket_rec_judge(void *arg)
 }
 
 /*thread for fileexchange receive socket*/
-void *file_notify_rec(void *arg) {
+/*void *file_notify_rec(void *arg) {
 
     char buf[10] = {0};
     int rev_len,socket_id=*((int *)arg); 
@@ -2472,6 +2472,7 @@ void *file_notify_rec(void *arg) {
         }
     }
 }
+*/
 
 int cal_num(char *str)
 {
@@ -2714,7 +2715,7 @@ static void *thr_fn(void *arg) {
                 case('2'):
                     {
                         *((char *)(host_v + 21)) = '0';
-                        *(char *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 99) = '1';
+                        //*(char *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 99) = '1';
                         char vmname2[50];
                         memcpy(vmname2,vmname,50);
                         int len = *(int *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 100);
