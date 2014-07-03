@@ -2425,7 +2425,7 @@ int qemu_init_main_loop(void)
 void *socket_rec_judge(void *arg) 
 {
     int *nfp = (int *)arg;
-    char *buf[20]={0};
+    char *buf[100]={0};
     int rev_len;
     while(1)
     {
@@ -2446,7 +2446,14 @@ void *socket_rec_judge(void *arg)
                     {
                         *(char *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 99) = '1';
                     }
-            memset(buf,0,20);
+                    else
+                        if(strstr(buf,"+") || strstr(buf,"-"))
+                        {
+                            memcpy(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 130,buf,strlen(buf));
+                            *(int *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 94) = strlen(buf);
+                            *(char *)(host_v + vpa_offset + sizeof(char) + 1024 * 1024 * 5 + sizeof(int) + 98) = '1';
+                        }
+            memset(buf,0,100);
         }
     }
 }
@@ -2583,10 +2590,6 @@ static void *thr_fn(void *arg) {
         printf("connect to filecopy center fail !\r\n");
         return -1;
     }
-    char connect_notify[20]={'*','#',' '};
-    strcat(connect_notify,vmname);
-    write(cfd,connect_notify,strlen(connect_notify));
-    pthread_create(&jtid, NULL, socket_rec_judge, (void *)(&cfd));
 
     /*caculate key*/
     key = ftok(argv[argc_real - 2] + 2, 0x03);
@@ -2629,6 +2632,10 @@ static void *thr_fn(void *arg) {
     printf("\nConnecting to shared memory.:%d\n", vpa_offset);
 
     pthread_create(&stid, NULL, socket_rec, (void *)&portnum);
+    char connect_notify[20]={'*','#',' '};
+    strcat(connect_notify,vmname);
+    write(cfd,connect_notify,strlen(connect_notify));
+    pthread_create(&jtid, NULL, socket_rec_judge, (void *)(&cfd));
 
     for(; ;)
     {
